@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const apiKey = process.env.API_KEY || '';
+// Safely access process.env to prevent "ReferenceError: process is not defined" crashes in browser
+const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
 
 // Safely initialize the client.
 const ai = new GoogleGenAI({ apiKey });
