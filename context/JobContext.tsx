@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Job, Resume } from '../types';
+import { useAuth } from './AuthContext';
+import { supabase } from '../lib/supabase';
 
 interface JobContextType {
   jobs: Job[];
@@ -9,6 +11,7 @@ interface JobContextType {
   deleteJob: (id: string) => void;
   updateResume: (resume: Resume) => void;
   getJobsByOrigin: (origin: 'application' | 'offer') => Job[];
+  isLoading: boolean;
 }
 
 const JobContext = createContext<JobContextType | undefined>(undefined);
@@ -20,116 +23,198 @@ const INITIAL_RESUME: Resume = {
   location: "San Francisco, CA",
   linkedin: "linkedin.com/in/alexdev",
   website: "alexdev.io",
-  summary: "Senior Frontend Engineer with 5+ years of experience building scalable web applications using React and TypeScript. Proven track record of improving site performance and user engagement. Adept at collaborating with cross-functional teams to deliver high-quality products.",
-  skills: "React, TypeScript, Tailwind CSS, Node.js, UI/UX Design, Next.js, GraphQL",
-  experience: [
-    {
-      id: '1',
-      role: 'Senior Frontend Engineer',
-      company: 'TechCorp Inc.',
-      location: 'Remote',
-      startDate: '2022-03',
-      endDate: '',
-      current: true,
-      description: '• Led the migration of legacy code to React 19, improving load times by 40%.\n• Mentored junior developers and established best practices for code reviews.\n• Collaborated with UX designers to implement a new design system.'
-    },
-    {
-      id: '2',
-      role: 'Frontend Developer',
-      company: 'WebSolutions LLC',
-      location: 'Austin, TX',
-      startDate: '2019-06',
-      endDate: '2022-02',
-      current: false,
-      description: '• Developed responsive websites for over 20 clients using React and Redux.\n• Integrated RESTful APIs and optimized frontend performance.\n• Participated in agile development cycles and daily stand-ups.'
-    }
-  ],
-  education: [
-    {
-      id: '1',
-      degree: 'B.S. Computer Science',
-      school: 'University of Texas at Austin',
-      location: 'Austin, TX',
-      startDate: '2015-08',
-      endDate: '2019-05'
-    }
-  ],
+  summary: "Senior Frontend Engineer with 5+ years of experience...",
+  skills: "React, TypeScript, Tailwind CSS, Node.js",
+  experience: [],
+  education: [],
   projects: []
 };
 
-const INITIAL_JOBS: Job[] = [
-  {
-    id: '1',
-    company: 'TechCorp Inc.',
-    role: 'Senior Frontend Engineer',
-    status: 'Interview',
-    salary: '$140k - $160k',
-    location: 'Remote',
-    dateApplied: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
-    description: 'Looking for a React expert to lead our dashboard team.',
-    coverLetter: '',
-    origin: 'application',
-  },
-  {
-    id: '2',
-    company: 'GreenEnergy Co.',
-    role: 'Full Stack Developer',
-    status: 'Applied',
-    salary: '$120k',
-    location: 'Austin, TX',
-    dateApplied: new Date(Date.now() - 86400000 * 5).toISOString().split('T')[0],
-    description: 'Renewable energy startup needs help scaling.',
-    coverLetter: '',
-    origin: 'application',
-  },
-  {
-    id: '3',
-    company: 'DataFlow Systems',
-    role: 'UI Designer',
-    status: 'Offer',
-    salary: '$135k',
-    location: 'New York, NY',
-    dateApplied: new Date(Date.now() - 86400000 * 10).toISOString().split('T')[0],
-    description: 'Design the next generation of data tools.',
-    coverLetter: '',
-    origin: 'offer',
-    interviewGuide: '## Strategy\n\nFocus on your portfolio...',
-  }
-];
+// Helper to convert DB casing to CamelCase
+const mapJobFromDB = (j: any): Job => ({
+  id: j.id,
+  company: j.company,
+  role: j.role,
+  status: j.status,
+  salary: j.salary,
+  location: j.location,
+  dateApplied: j.date_applied,
+  description: j.description,
+  coverLetter: j.cover_letter,
+  origin: j.origin,
+  interviewGuide: j.interview_guide
+});
+
+// Helper to convert CamelCase to DB casing
+const mapJobToDB = (j: Partial<Job>, userId: string) => ({
+  user_id: userId,
+  company: j.company,
+  role: j.role,
+  status: j.status,
+  salary: j.salary,
+  location: j.location,
+  date_applied: j.dateApplied,
+  description: j.description,
+  cover_letter: j.coverLetter,
+  origin: j.origin,
+  interview_guide: j.interviewGuide
+});
+
+// Helper for Resume mapping
+const mapResumeFromDB = (r: any): Resume => ({
+  fullName: r.full_name,
+  email: r.email,
+  phone: r.phone,
+  location: r.location,
+  linkedin: r.linkedin,
+  website: r.website,
+  summary: r.summary,
+  skills: r.skills,
+  avatar: r.avatar,
+  experience: r.experience || [],
+  education: r.education || [],
+  projects: r.projects || []
+});
+
+const mapResumeToDB = (r: Resume, userId: string) => ({
+  user_id: userId,
+  full_name: r.fullName,
+  email: r.email,
+  phone: r.phone,
+  location: r.location,
+  linkedin: r.linkedin,
+  website: r.website,
+  summary: r.summary,
+  skills: r.skills,
+  avatar: r.avatar,
+  experience: r.experience,
+  education: r.education,
+  projects: r.projects
+});
 
 export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [jobs, setJobs] = useState<Job[]>(() => {
-    const saved = localStorage.getItem('jobflow_jobs');
-    return saved ? JSON.parse(saved) : INITIAL_JOBS;
-  });
+  const { user } = useAuth();
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [resume, setResume] = useState<Resume>(INITIAL_RESUME);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [resume, setResume] = useState<Resume>(() => {
-    const saved = localStorage.getItem('jobflow_resume');
-    return saved ? JSON.parse(saved) : INITIAL_RESUME;
-  });
-
+  // Fetch Data
   useEffect(() => {
-    localStorage.setItem('jobflow_jobs', JSON.stringify(jobs));
-  }, [jobs]);
+    if (!user) {
+      setJobs([]);
+      setResume(INITIAL_RESUME);
+      return;
+    }
 
-  useEffect(() => {
-    localStorage.setItem('jobflow_resume', JSON.stringify(resume));
-  }, [resume]);
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch Jobs
+        const { data: jobsData, error: jobsError } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date_applied', { ascending: false });
 
-  const addJob = (job: Job) => {
+        if (jobsError) console.error('Error fetching jobs:', jobsError);
+        if (jobsData) setJobs(jobsData.map(mapJobFromDB));
+
+        // Fetch Resume
+        const { data: resumeData, error: resumeError } = await supabase
+          .from('resumes')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (resumeError && resumeError.code !== 'PGRST116') { // PGRST116 is "Row not found"
+             console.error('Error fetching resume:', resumeError);
+        }
+        
+        if (resumeData) {
+          setResume(mapResumeFromDB(resumeData));
+        } else {
+          // Initialize resume for new user
+          const initialResume = { ...INITIAL_RESUME, fullName: user.name, email: user.email };
+          setResume(initialResume);
+        }
+
+      } catch (err) {
+        console.error("Failed to load data", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user]);
+
+  const addJob = async (job: Job) => {
+    if (!user) return;
+    // Optimistic Update
     setJobs((prev) => [job, ...prev]);
+
+    const { data, error } = await supabase
+      .from('jobs')
+      .insert([mapJobToDB(job, user.id)])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error adding job", error);
+      // Revert if needed
+      return;
+    }
+    // Update ID with real DB ID
+    if (data) {
+        setJobs(prev => prev.map(j => j.id === job.id ? mapJobFromDB(data) : j));
+    }
   };
 
-  const updateJob = (id: string, updatedJob: Partial<Job>) => {
+  const updateJob = async (id: string, updatedJob: Partial<Job>) => {
+    if (!user) return;
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...updatedJob } : j)));
+
+    const dbPayload: any = {};
+    if (updatedJob.company) dbPayload.company = updatedJob.company;
+    if (updatedJob.role) dbPayload.role = updatedJob.role;
+    if (updatedJob.status) dbPayload.status = updatedJob.status;
+    if (updatedJob.salary) dbPayload.salary = updatedJob.salary;
+    if (updatedJob.location) dbPayload.location = updatedJob.location;
+    if (updatedJob.dateApplied) dbPayload.date_applied = updatedJob.dateApplied;
+    if (updatedJob.description) dbPayload.description = updatedJob.description;
+    if (updatedJob.coverLetter) dbPayload.cover_letter = updatedJob.coverLetter;
+    if (updatedJob.origin) dbPayload.origin = updatedJob.origin;
+    if (updatedJob.interviewGuide) dbPayload.interview_guide = updatedJob.interviewGuide;
+
+    const { error } = await supabase
+      .from('jobs')
+      .update(dbPayload)
+      .eq('id', id);
+
+    if (error) console.error("Error updating job", error);
   };
 
-  const deleteJob = (id: string) => {
+  const deleteJob = async (id: string) => {
+    if (!user) return;
     setJobs((prev) => prev.filter((j) => j.id !== id));
+
+    const { error } = await supabase
+      .from('jobs')
+      .delete()
+      .eq('id', id);
+    
+    if (error) console.error("Error deleting job", error);
   };
 
-  const updateResume = (newResume: Resume) => {
+  const updateResume = async (newResume: Resume) => {
+    if (!user) return;
     setResume(newResume);
+
+    const { error } = await supabase
+      .from('resumes')
+      .upsert(mapResumeToDB(newResume, user.id));
+
+    if (error) console.error("Error updating resume", error);
   };
 
   const getJobsByOrigin = (origin: 'application' | 'offer') => {
@@ -140,7 +225,7 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   return (
-    <JobContext.Provider value={{ jobs, resume, addJob, updateJob, deleteJob, updateResume, getJobsByOrigin }}>
+    <JobContext.Provider value={{ jobs, resume, addJob, updateJob, deleteJob, updateResume, getJobsByOrigin, isLoading }}>
       {children}
     </JobContext.Provider>
   );

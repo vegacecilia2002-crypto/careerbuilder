@@ -1,7 +1,8 @@
 import React from 'react';
-import { LayoutDashboard, Briefcase, FileText, Settings, UserCircle, Menu, FileUser, Camera } from 'lucide-react';
+import { LayoutDashboard, Briefcase, FileText, Settings, UserCircle, Menu, FileUser, Camera, LogOut } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { ClaireChat } from './ClaireChat';
+import { useAuth } from '../context/AuthContext';
 
 const SidebarItem = ({ icon: Icon, label, to, active }: { icon: any, label: string, to: string, active: boolean }) => (
   <Link
@@ -20,6 +21,7 @@ const SidebarItem = ({ icon: Icon, label, to, active }: { icon: any, label: stri
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const { user, logout } = useAuth();
 
   const isResumeBuilder = location.pathname === '/resume';
 
@@ -45,14 +47,24 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
           <div className="pt-6 border-t border-slate-100">
             <SidebarItem icon={Settings} label="Settings" to="/settings" active={location.pathname === '/settings'} />
-            <div className="mt-4 flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
-                <UserCircle size={20} />
+            
+            <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                  {user?.name?.charAt(0) || <UserCircle size={20} />}
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-sm font-bold truncate text-slate-900">{user?.name || 'User'}</p>
+                  <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="text-sm font-medium truncate">Alex Developer</p>
-                <p className="text-xs text-slate-500 truncate">Pro Plan</p>
-              </div>
+              <button 
+                onClick={logout}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-colors"
+              >
+                <LogOut size={14} />
+                Sign Out
+              </button>
             </div>
           </div>
         </div>
