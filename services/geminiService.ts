@@ -1,12 +1,29 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Safely access process.env to prevent "ReferenceError: process is not defined" crashes in browser
-const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) || '';
+/**
+ * Safely retrieves the API key from the environment.
+ * Guidelines: Assume process.env.API_KEY is pre-configured.
+ * We use a function to avoid top-level ReferenceErrors in strictly bundled ESM environments.
+ */
+const getSafeApiKey = (): string => {
+  try {
+    return process.env.API_KEY || "";
+  } catch {
+    return "";
+  }
+};
 
-// Safely initialize the client.
-const ai = new GoogleGenAI({ apiKey });
-
-// --- Existing Functions ---
+/**
+ * Creates a fresh instance of the AI client.
+ * Guidelines: Create a new instance right before use to ensure up-to-date keys.
+ */
+const getAIClient = () => {
+  const apiKey = getSafeApiKey();
+  if (!apiKey) {
+    console.warn("Gemini API Key is missing from process.env.API_KEY");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export const generateCoverLetter = async (
   role: string,
@@ -14,8 +31,6 @@ export const generateCoverLetter = async (
   skills: string,
   jobDescription?: string
 ): Promise<string> => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
   const prompt = `
     Write a passionate and professional cover letter for the position of ${role} at ${company}.
     My Skills: ${skills}
@@ -25,8 +40,9 @@ export const generateCoverLetter = async (
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     return response.text || "Could not generate cover letter.";
@@ -41,8 +57,6 @@ export const generateInterviewGuide = async (
   company: string,
   description?: string
 ): Promise<string> => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
   const prompt = `
     Act as a career coach. I have received an offer or an interview request for:
     Role: ${role}
@@ -57,8 +71,9 @@ export const generateInterviewGuide = async (
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     return response.text || "Could not generate guide.";
@@ -73,8 +88,6 @@ export const generateResumeSummary = async (
   skills: string,
   experience: string
 ): Promise<string> => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
   const prompt = `
     Write a professional resume summary (approx 3-4 sentences) for a candidate with the following profile:
     Current/Target Role: ${role}
@@ -84,8 +97,9 @@ export const generateResumeSummary = async (
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     return response.text || "Could not generate summary.";
@@ -96,8 +110,6 @@ export const generateResumeSummary = async (
 };
 
 export const enhanceResumeDescription = async (text: string): Promise<string> => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
   const prompt = `
     Rewrite the following resume experience description to be more professional, action-oriented, and impactful.
     Maintain the original meaning but use stronger verbs and clearer structure.
@@ -109,8 +121,9 @@ export const enhanceResumeDescription = async (text: string): Promise<string> =>
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     return response.text || text;
@@ -120,11 +133,7 @@ export const enhanceResumeDescription = async (text: string): Promise<string> =>
   }
 };
 
-// --- New Agentic Features ---
-
 export const analyzeResumeImage = async (base64Image: string, mimeType: string) => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
   const prompt = `
     Analyze this resume image/document. Extract the structured data to match this JSON schema.
     Improve the wording of descriptions to be more action-oriented and professional where possible.
@@ -149,8 +158,9 @@ export const analyzeResumeImage = async (base64Image: string, mimeType: string) 
   `;
 
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // High reasoning for document extraction
+      model: 'gemini-3-pro-preview', // Complex reasoning for extraction
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Image } },
@@ -171,12 +181,10 @@ export const analyzeResumeImage = async (base64Image: string, mimeType: string) 
 };
 
 export const generateProfessionalAvatar = async (base64Image: string, stylePrompt?: string): Promise<string> => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
   const finalPrompt = stylePrompt || "Transform this person into a high-quality professional corporate headshot. Studio lighting, neutral grey gradient background, professional business attire, sharp focus, confident smile.";
 
-  // Using gemini-2.5-flash-image for image generation/editing
   try {
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -187,7 +195,6 @@ export const generateProfessionalAvatar = async (base64Image: string, stylePromp
       },
     });
 
-    // The model returns the image in the response parts
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
         return part.inlineData.data;
@@ -201,10 +208,9 @@ export const generateProfessionalAvatar = async (base64Image: string, stylePromp
 };
 
 export const createClaireChat = () => {
-  if (!apiKey) throw new Error("API Key is missing.");
-
+  const ai = getAIClient();
   return ai.chats.create({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3-flash-preview',
     config: {
       systemInstruction: "You are Claire, a friendly, empathetic, and strategic career coach. You help the user optimize their job search. Keep answers concise and encouraging. Use formatting like bolding for key tips.",
     }

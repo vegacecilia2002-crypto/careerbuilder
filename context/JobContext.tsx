@@ -30,20 +30,23 @@ const INITIAL_RESUME: Resume = {
   projects: []
 };
 
-// Helper to convert DB casing to CamelCase
-const mapJobFromDB = (j: any): Job => ({
-  id: j.id,
-  company: j.company,
-  role: j.role,
-  status: j.status,
-  salary: j.salary,
-  location: j.location,
-  dateApplied: j.date_applied,
-  description: j.description,
-  coverLetter: j.cover_letter,
-  origin: j.origin,
-  interviewGuide: j.interview_guide
-});
+// Helper to convert DB casing to CamelCase with safety checks
+const mapJobFromDB = (j: any): Job => {
+  if (!j) return {} as Job;
+  return {
+    id: j.id || '',
+    company: j.company || '',
+    role: j.role || '',
+    status: j.status || 'Applied',
+    salary: j.salary || '',
+    location: j.location || '',
+    dateApplied: j.date_applied || '',
+    description: j.description || '',
+    coverLetter: j.cover_letter || '',
+    origin: j.origin || 'application',
+    interviewGuide: j.interview_guide || ''
+  };
+};
 
 // Helper to convert CamelCase to DB casing
 const mapJobToDB = (j: Partial<Job>, userId: string) => ({
@@ -60,21 +63,24 @@ const mapJobToDB = (j: Partial<Job>, userId: string) => ({
   interview_guide: j.interviewGuide
 });
 
-// Helper for Resume mapping
-const mapResumeFromDB = (r: any): Resume => ({
-  fullName: r.full_name,
-  email: r.email,
-  phone: r.phone,
-  location: r.location,
-  linkedin: r.linkedin,
-  website: r.website,
-  summary: r.summary,
-  skills: r.skills,
-  avatar: r.avatar,
-  experience: r.experience || [],
-  education: r.education || [],
-  projects: r.projects || []
-});
+// Helper for Resume mapping with safety checks
+const mapResumeFromDB = (r: any): Resume => {
+  if (!r) return INITIAL_RESUME;
+  return {
+    fullName: r.full_name || '',
+    email: r.email || '',
+    phone: r.phone || '',
+    location: r.location || '',
+    linkedin: r.linkedin || '',
+    website: r.website || '',
+    summary: r.summary || '',
+    skills: r.skills || '',
+    avatar: r.avatar || undefined,
+    experience: Array.isArray(r.experience) ? r.experience : [],
+    education: Array.isArray(r.education) ? r.education : [],
+    projects: Array.isArray(r.projects) ? r.projects : []
+  };
+};
 
 const mapResumeToDB = (r: Resume, userId: string) => ({
   user_id: userId,
@@ -124,10 +130,10 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           .from('resumes')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle(); // Use maybeSingle to avoid 406 errors on empty results
 
-        if (resumeError && resumeError.code !== 'PGRST116') { // PGRST116 is "Row not found"
-             console.error('Error fetching resume:', resumeError);
+        if (resumeError) {
+          console.error('Error fetching resume:', resumeError);
         }
         
         if (resumeData) {
@@ -150,7 +156,6 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const addJob = async (job: Job) => {
     if (!user) return;
-    // Optimistic Update
     setJobs((prev) => [job, ...prev]);
 
     const { data, error } = await supabase
@@ -161,10 +166,8 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     if (error) {
       console.error("Error adding job", error);
-      // Revert if needed
       return;
     }
-    // Update ID with real DB ID
     if (data) {
         setJobs(prev => prev.map(j => j.id === job.id ? mapJobFromDB(data) : j));
     }
@@ -175,16 +178,16 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...updatedJob } : j)));
 
     const dbPayload: any = {};
-    if (updatedJob.company) dbPayload.company = updatedJob.company;
-    if (updatedJob.role) dbPayload.role = updatedJob.role;
-    if (updatedJob.status) dbPayload.status = updatedJob.status;
-    if (updatedJob.salary) dbPayload.salary = updatedJob.salary;
-    if (updatedJob.location) dbPayload.location = updatedJob.location;
-    if (updatedJob.dateApplied) dbPayload.date_applied = updatedJob.dateApplied;
-    if (updatedJob.description) dbPayload.description = updatedJob.description;
-    if (updatedJob.coverLetter) dbPayload.cover_letter = updatedJob.coverLetter;
-    if (updatedJob.origin) dbPayload.origin = updatedJob.origin;
-    if (updatedJob.interviewGuide) dbPayload.interview_guide = updatedJob.interviewGuide;
+    if (updatedJob.company !== undefined) dbPayload.company = updatedJob.company;
+    if (updatedJob.role !== undefined) dbPayload.role = updatedJob.role;
+    if (updatedJob.status !== undefined) dbPayload.status = updatedJob.status;
+    if (updatedJob.salary !== undefined) dbPayload.salary = updatedJob.salary;
+    if (updatedJob.location !== undefined) dbPayload.location = updatedJob.location;
+    if (updatedJob.dateApplied !== undefined) dbPayload.date_applied = updatedJob.dateApplied;
+    if (updatedJob.description !== undefined) dbPayload.description = updatedJob.description;
+    if (updatedJob.coverLetter !== undefined) dbPayload.cover_letter = updatedJob.coverLetter;
+    if (updatedJob.origin !== undefined) dbPayload.origin = updatedJob.origin;
+    if (updatedJob.interviewGuide !== undefined) dbPayload.interview_guide = updatedJob.interviewGuide;
 
     const { error } = await supabase
       .from('jobs')

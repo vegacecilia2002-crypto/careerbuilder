@@ -70,7 +70,7 @@ export const AuthPage: React.FC = () => {
             </div>
             <div className="flex items-center gap-3 text-slate-300">
               <CheckCircle2 className="text-emerald-500" />
-              <span>Secure Application Tracking</span>
+              <span>Secure Cloud Data Synchronization</span>
             </div>
           </div>
         </div>
@@ -171,12 +171,10 @@ export const AuthPage: React.FC = () => {
             </button>
           </div>
           
-          {!isLogin && (
-            <div className="flex items-start gap-2 p-3 bg-slate-50 rounded-lg text-xs text-slate-500">
-               <Zap size={14} className="mt-0.5 text-amber-500 shrink-0" />
-               <p>Your data is stored locally in your browser. Clearing your cache will remove your data.</p>
-            </div>
-          )}
+          <div className="flex items-start gap-2 p-3 bg-emerald-50 rounded-lg text-xs text-slate-600">
+             <Zap size={14} className="mt-0.5 text-emerald-500 shrink-0" />
+             <p>Your data is securely stored in your private cloud workspace. Access your dashboard from any device.</p>
+          </div>
         </div>
       </div>
     </div>
