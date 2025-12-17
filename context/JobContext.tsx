@@ -130,7 +130,7 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           .from('resumes')
           .select('*')
           .eq('user_id', user.id)
-          .maybeSingle(); // Use maybeSingle to avoid 406 errors on empty results
+          .maybeSingle();
 
         if (resumeError) {
           console.error('Error fetching resume:', resumeError);
@@ -139,8 +139,12 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (resumeData) {
           setResume(mapResumeFromDB(resumeData));
         } else {
-          // Initialize resume for new user
-          const initialResume = { ...INITIAL_RESUME, fullName: user.name, email: user.email };
+          // Initialize resume for new user with fallbacks
+          const initialResume = { 
+            ...INITIAL_RESUME, 
+            fullName: user.name || 'Professional User', 
+            email: user.email || '' 
+          };
           setResume(initialResume);
         }
 

@@ -3,14 +3,18 @@ import { GoogleGenAI, Type } from "@google/genai";
 /**
  * Safely retrieves the API key from the environment.
  * Guidelines: Assume process.env.API_KEY is pre-configured.
- * We use a function to avoid top-level ReferenceErrors in strictly bundled ESM environments.
+ * We use 'typeof process' to avoid ReferenceErrors in browser-only environments.
  */
 const getSafeApiKey = (): string => {
-  try {
+  if (typeof process !== 'undefined' && process.env) {
     return process.env.API_KEY || "";
-  } catch {
-    return "";
   }
+  // Check window for common environment injection patterns
+  const win = window as any;
+  if (win._env_ && win._env_.API_KEY) return win._env_.API_KEY;
+  if (win.process && win.process.env && win.process.env.API_KEY) return win.process.env.API_KEY;
+  
+  return "";
 };
 
 /**
@@ -20,7 +24,7 @@ const getSafeApiKey = (): string => {
 const getAIClient = () => {
   const apiKey = getSafeApiKey();
   if (!apiKey) {
-    console.warn("Gemini API Key is missing from process.env.API_KEY");
+    console.warn("Gemini API Key is missing from the environment.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -160,7 +164,7 @@ export const analyzeResumeImage = async (base64Image: string, mimeType: string) 
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview', // Complex reasoning for extraction
+      model: 'gemini-3-pro-preview',
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Image } },
