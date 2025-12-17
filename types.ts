@@ -1,3 +1,4 @@
+
 export type JobStatus = 'Applied' | 'Interview' | 'Offer' | 'Rejected' | 'Accepted';
 
 export type JobOrigin = 'application' | 'offer';
@@ -11,9 +12,26 @@ export interface Job {
   location: string;
   dateApplied: string;
   description: string;
-  coverLetter: string; // AI Generated
+  coverLetter: string;
   origin: JobOrigin;
-  interviewGuide?: string; // AI Generated for offers/interviews
+  interviewGuide?: string;
+  matchAnalysis?: MatchAnalysis;
+}
+
+export interface MatchAnalysis {
+  score: number;
+  strengths: string[];
+  gaps: string[];
+  advice: string;
+}
+
+export interface JobOpportunity {
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  source: string;
+  matchReason: string;
 }
 
 export interface ResumeExperience {
@@ -52,7 +70,7 @@ export interface Resume {
   website: string;
   summary: string;
   skills: string; 
-  avatar?: string; // Base64
+  avatar?: string;
   experience: ResumeExperience[];
   education: ResumeEducation[];
   projects: ResumeProject[];

@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useJobContext } from '../context/JobContext';
 import { Resume, ResumeExperience, ResumeEducation, ResumeProject } from '../types';
-import { Plus, Trash2, Wand2, Download, User, Mail, Phone, MapPin, Linkedin, Globe, Loader2, Briefcase, GraduationCap, FileText, FolderGit2, Upload, Camera, ArrowUp, ArrowDown, Cpu, Sparkles, Eye, Edit3, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Wand2, Download, User, Mail, Phone, MapPin, Linkedin, Globe, Loader2, Briefcase, GraduationCap, FileText, FolderGit2, Upload, Camera, ArrowUp, ArrowDown, Cpu, Sparkles, Eye, Edit3, ChevronDown, Check } from 'lucide-react';
 import { generateResumeSummary, analyzeResumeImage, enhanceResumeDescription } from '../services/geminiService';
 
 export const ResumeBuilder: React.FC = () => {
@@ -10,10 +10,13 @@ export const ResumeBuilder: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'details' | 'skills' | 'summary' | 'experience' | 'education' | 'projects'>('details');
   const [mobileView, setMobileView] = useState<'editor' | 'preview'>('editor');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState<string | null>(null); // Stores ID of item being enhanced
+  const [isEnhancing, setIsEnhancing] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isTabsOpen, setIsTabsOpen] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
 
   const handleUpdate = (field: keyof Resume, value: any) => {
     updateResume({ ...resume, [field]: value });
@@ -26,29 +29,31 @@ export const ResumeBuilder: React.FC = () => {
   const switchToEditor = (tab: typeof activeTab) => {
     setActiveTab(tab);
     setMobileView('editor');
+    setIsTabsOpen(false);
+  };
+
+  // Auto-scroll focused elements into view for mobile keyboard friendliness
+  const handleFocus = (e: React.FocusEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    setTimeout(() => {
+      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300); // Small delay to allow keyboard to start appearing
   };
 
   // --- AI Features ---
-
   const handleImportResume = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsImporting(true);
     try {
       const base64 = await fileToBase64(file);
       const data = base64.split(',')[1];
       const mimeType = file.type;
       const extractedData = await analyzeResumeImage(data, mimeType);
-      
       const newResume = { ...resume, ...extractedData };
-      // Ensure IDs
       newResume.experience = newResume.experience?.map((e: any) => ({ ...e, id: e.id || crypto.randomUUID() })) || [];
       newResume.education = newResume.education?.map((e: any) => ({ ...e, id: e.id || crypto.randomUUID() })) || [];
       newResume.projects = newResume.projects?.map((e: any) => ({ ...e, id: e.id || crypto.randomUUID() })) || [];
-      
       updateResume(newResume);
-      alert("Resume imported successfully!");
     } catch (err) {
       console.error(err);
       alert("Failed to analyze resume.");
@@ -74,7 +79,6 @@ export const ResumeBuilder: React.FC = () => {
       handleUpdate('summary', newSummary);
     } catch (e) {
       console.error(e);
-      alert("Failed to generate summary.");
     } finally {
       setIsGenerating(false);
     }
@@ -85,21 +89,16 @@ export const ResumeBuilder: React.FC = () => {
     setIsEnhancing(id);
     try {
       const enhancedText = await enhanceResumeDescription(text);
-      if (type === 'experience') {
-        updateExperience(id, 'description', enhancedText);
-      } else {
-        updateProject(id, 'description', enhancedText);
-      }
+      if (type === 'experience') updateExperience(id, 'description', enhancedText);
+      else updateProject(id, 'description', enhancedText);
     } catch (e) {
       console.error(e);
-      alert("Failed to enhance text.");
     } finally {
       setIsEnhancing(null);
     }
   };
 
   // --- CRUD Handlers ---
-
   const addExperience = () => {
     handleUpdate('experience', [{
       id: crypto.randomUUID(), role: '', company: '', location: '', startDate: '', endDate: '', current: false, description: ''
@@ -153,7 +152,9 @@ export const ResumeBuilder: React.FC = () => {
     { id: 'experience', label: 'Experience', icon: Briefcase },
     { id: 'education', label: 'Education', icon: GraduationCap },
     { id: 'projects', label: 'Projects', icon: FolderGit2 },
-  ];
+  ] as const;
+
+  const currentTab = tabs.find(t => t.id === activeTab)!;
 
   return (
     <div className="flex flex-col h-full space-y-4">
@@ -195,30 +196,65 @@ export const ResumeBuilder: React.FC = () => {
         
         {/* --- EDITOR PANEL --- */}
         <div className={`w-full xl:w-5/12 flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden print:hidden h-full ${mobileView === 'editor' ? 'flex' : 'hidden xl:flex'}`}>
-          {/* Tabs */}
-          <div className="flex border-b border-slate-100 overflow-x-auto scrollbar-hide bg-white z-10 shrink-0">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeTab === tab.id 
-                    ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50/50' 
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
+          
+          {/* Collapsible Mobile Tab Selector / Desktop Tabs */}
+          <div className="relative border-b border-slate-100 bg-white z-20 shrink-0">
+            {/* Desktop View */}
+            <div className="hidden xl:flex overflow-x-auto scrollbar-hide">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === tab.id 
+                      ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50/50' 
+                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <tab.icon size={16} />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Mobile View - Collapsible */}
+            <div className="xl:hidden p-2">
+              <button 
+                onClick={() => setIsTabsOpen(!isTabsOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-900 font-bold"
               >
-                <tab.icon size={16} />
-                <span className="hidden lg:inline">{tab.label}</span>
+                <div className="flex items-center gap-3">
+                  <currentTab.icon size={20} className="text-emerald-600" />
+                  <span>Section: {currentTab.label}</span>
+                </div>
+                <ChevronDown size={20} className={`text-slate-400 transition-transform ${isTabsOpen ? 'rotate-180' : ''}`} />
               </button>
-            ))}
+
+              {isTabsOpen && (
+                <div className="absolute top-full left-0 right-0 m-2 mt-1 bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-scaleIn origin-top z-30">
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => switchToEditor(tab.id as any)}
+                      className={`w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 ${activeTab === tab.id ? 'bg-emerald-50/50 text-emerald-600' : 'text-slate-600'}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <tab.icon size={18} />
+                        <span className="font-medium">{tab.label}</span>
+                      </div>
+                      {activeTab === tab.id && <Check size={18} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50/50">
+          <div ref={editorScrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-50/50">
             
             {/* 1. DETAILS TAB */}
             {activeTab === 'details' && (
               <div className="space-y-6 animate-fadeIn">
-                {/* Avatar */}
                 <div className="flex items-start gap-4 p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
                    <div className="relative w-20 h-20 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 border-2 border-white shadow-md">
                       {resume.avatar ? <img src={resume.avatar} alt="Avatar" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><User size={32} /></div>}
@@ -236,14 +272,14 @@ export const ResumeBuilder: React.FC = () => {
 
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                   <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2">Personal Information</h3>
-                  <Input label="Full Name" value={resume.fullName} onChange={(v) => handleUpdate('fullName', v)} placeholder="Jane Doe" />
+                  <Input label="Full Name" value={resume.fullName} onChange={(v) => handleUpdate('fullName', v)} onFocus={handleFocus} placeholder="Jane Doe" />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <Input label="Email" value={resume.email} onChange={(v) => handleUpdate('email', v)} placeholder="jane@example.com" />
-                     <Input label="Phone" value={resume.phone} onChange={(v) => handleUpdate('phone', v)} placeholder="(555) 123-4567" />
+                     <Input label="Email" value={resume.email} onChange={(v) => handleUpdate('email', v)} onFocus={handleFocus} placeholder="jane@example.com" />
+                     <Input label="Phone" value={resume.phone} onChange={(v) => handleUpdate('phone', v)} onFocus={handleFocus} placeholder="(555) 123-4567" />
                   </div>
-                  <Input label="Location" value={resume.location} onChange={(v) => handleUpdate('location', v)} placeholder="San Francisco, CA" />
-                  <Input label="LinkedIn" value={resume.linkedin} onChange={(v) => handleUpdate('linkedin', v)} placeholder="linkedin.com/in/jane" />
-                  <Input label="Website" value={resume.website} onChange={(v) => handleUpdate('website', v)} placeholder="janedoe.com" />
+                  <Input label="Location" value={resume.location} onChange={(v) => handleUpdate('location', v)} onFocus={handleFocus} placeholder="San Francisco, CA" />
+                  <Input label="LinkedIn" value={resume.linkedin} onChange={(v) => handleUpdate('linkedin', v)} onFocus={handleFocus} placeholder="linkedin.com/in/jane" />
+                  <Input label="Website" value={resume.website} onChange={(v) => handleUpdate('website', v)} onFocus={handleFocus} placeholder="janedoe.com" />
                 </div>
               </div>
             )}
@@ -253,12 +289,13 @@ export const ResumeBuilder: React.FC = () => {
                <div className="space-y-4 animate-fadeIn">
                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <h3 className="text-lg font-bold text-slate-900 mb-2">Key Skills</h3>
-                    <p className="text-sm text-slate-500 mb-4">List your technical and soft skills, separated by commas. These are crucial for AI optimization.</p>
+                    <p className="text-sm text-slate-500 mb-4">List skills separated by commas.</p>
                     <textarea 
                         value={resume.skills}
+                        onFocus={handleFocus}
                         onChange={(e) => handleUpdate('skills', e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm h-48 resize-none placeholder:text-slate-300 transition-all focus:ring-1 focus:ring-emerald-500 leading-relaxed"
-                        placeholder="e.g. React, TypeScript, Project Management, Public Speaking, Node.js..."
+                        className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm h-48 resize-none transition-all focus:ring-1 focus:ring-emerald-500"
+                        placeholder="e.g. React, TypeScript, Project Management..."
                     />
                  </div>
                </div>
@@ -268,12 +305,11 @@ export const ResumeBuilder: React.FC = () => {
             {activeTab === 'summary' && (
               <div className="space-y-4 animate-fadeIn h-full flex flex-col">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900">Professional Summary</h3>
+                  <h3 className="text-lg font-bold text-slate-900">Summary</h3>
                   <button 
                     onClick={generateSummary} 
                     disabled={isGenerating || (!resume.skills && resume.experience.length === 0)} 
                     className="text-xs flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
-                    title={(!resume.skills && resume.experience.length === 0) ? "Add skills or experience first" : "Generate summary based on your profile"}
                   >
                     {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                     {isGenerating ? 'Generating...' : 'Auto-Generate'}
@@ -282,9 +318,10 @@ export const ResumeBuilder: React.FC = () => {
                 <div className="flex-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
                    <textarea
                     value={resume.summary}
+                    onFocus={handleFocus}
                     onChange={(e) => handleUpdate('summary', e.target.value)}
-                    className="w-full h-full p-4 rounded-lg outline-none text-sm leading-relaxed resize-none text-slate-700"
-                    placeholder="Briefly describe your professional background and key achievements..."
+                    className="w-full h-full min-h-[150px] p-4 rounded-lg outline-none text-sm leading-relaxed resize-none text-slate-700"
+                    placeholder="Briefly describe your background..."
                   />
                 </div>
               </div>
@@ -294,58 +331,42 @@ export const ResumeBuilder: React.FC = () => {
             {activeTab === 'experience' && (
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900">Work Experience</h3>
-                  <button onClick={addExperience} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"><Plus size={14} /> Add Role</button>
+                  <h3 className="text-lg font-bold text-slate-900">Experience</h3>
+                  <button onClick={addExperience} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 shadow-lg shadow-slate-200"><Plus size={14} /> Add Role</button>
                 </div>
-                
                 {resume.experience.length === 0 && <EmptyState icon={Briefcase} text="No experience listed yet." />}
-
                 {resume.experience.map((exp, index) => (
-                  <div key={exp.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4 transition-all hover:shadow-md group">
+                  <div key={exp.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4">
                     <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-2">
-                         <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-bold text-slate-500">{index + 1}</span>
-                         <span className="text-sm font-semibold text-slate-400">Position</span>
-                      </div>
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-bold text-slate-500">{index + 1}</span>
                       <div className="flex gap-1">
                          <button onClick={() => moveExperience(index, 'up')} disabled={index === 0} className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30"><ArrowUp size={14} /></button>
                          <button onClick={() => moveExperience(index, 'down')} disabled={index === resume.experience.length - 1} className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30"><ArrowDown size={14} /></button>
-                         <button onClick={() => removeExperience(exp.id)} className="p-1 text-slate-300 hover:text-red-500 ml-2"><Trash2 size={14} /></button>
+                         <button onClick={() => removeExperience(exp.id)} className="p-1 text-slate-400 hover:text-red-500 ml-2"><Trash2 size={14} /></button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Input label="Role Title" value={exp.role} onChange={(v) => updateExperience(exp.id, 'role', v)} placeholder="Senior Engineer" />
-                      <Input label="Company" value={exp.company} onChange={(v) => updateExperience(exp.id, 'company', v)} placeholder="Acme Corp" />
+                      <Input label="Role Title" value={exp.role} onChange={(v) => updateExperience(exp.id, 'role', v)} onFocus={handleFocus} placeholder="Senior Engineer" />
+                      <Input label="Company" value={exp.company} onChange={(v) => updateExperience(exp.id, 'company', v)} onFocus={handleFocus} placeholder="Acme Corp" />
                     </div>
-                    <Input label="Location" value={exp.location} onChange={(v) => updateExperience(exp.id, 'location', v)} placeholder="Remote / City" />
+                    <Input label="Location" value={exp.location} onChange={(v) => updateExperience(exp.id, 'location', v)} onFocus={handleFocus} placeholder="Remote / City" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                       <Input label="Start Date" type="month" value={exp.startDate} onChange={(v) => updateExperience(exp.id, 'startDate', v)} />
-                       <div className="flex flex-col justify-end">
-                         {!exp.current && <Input label="End Date" type="month" value={exp.endDate} onChange={(v) => updateExperience(exp.id, 'endDate', v)} /> }
-                         <div className="flex items-center gap-2 mt-3 ml-1">
-                            <input type="checkbox" checked={exp.current} onChange={(e) => updateExperience(exp.id, 'current', e.target.checked)} className="rounded text-emerald-600" />
-                            <label className="text-xs text-slate-600 font-medium">I currently work here</label>
-                         </div>
-                       </div>
+                       <Input label="Start Date" type="month" value={exp.startDate} onChange={(v) => updateExperience(exp.id, 'startDate', v)} onFocus={handleFocus} />
+                       {!exp.current && <Input label="End Date" type="month" value={exp.endDate} onChange={(v) => updateExperience(exp.id, 'endDate', v)} onFocus={handleFocus} /> }
+                    </div>
+                    <div className="flex items-center gap-2 ml-1">
+                        <input type="checkbox" checked={exp.current} onChange={(e) => updateExperience(exp.id, 'current', e.target.checked)} className="rounded text-emerald-600" />
+                        <label className="text-xs text-slate-600 font-medium">Currently work here</label>
                     </div>
                     <div>
                         <div className="flex justify-between items-center mb-1">
                            <label className="text-xs font-medium text-slate-500">Description</label>
-                           <button 
-                             onClick={() => enhanceDescription(exp.id, exp.description, 'experience')}
-                             disabled={isEnhancing === exp.id || !exp.description}
-                             className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold hover:text-emerald-700 disabled:opacity-50"
-                           >
+                           <button onClick={() => enhanceDescription(exp.id, exp.description, 'experience')} disabled={isEnhancing === exp.id || !exp.description} className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold disabled:opacity-50">
                              {isEnhancing === exp.id ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />}
                              AI Enhance
                            </button>
                         </div>
-                        <textarea 
-                            value={exp.description} 
-                            onChange={(e) => updateExperience(exp.id, 'description', e.target.value)} 
-                            className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm h-32 resize-none placeholder:text-slate-300 transition-all focus:ring-1 focus:ring-emerald-500" 
-                            placeholder="• Led a team of 5 developers..." 
-                        />
+                        <textarea value={exp.description} onFocus={handleFocus} onChange={(e) => updateExperience(exp.id, 'description', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm h-32 resize-none transition-all" />
                     </div>
                   </div>
                 ))}
@@ -357,30 +378,20 @@ export const ResumeBuilder: React.FC = () => {
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-900">Education</h3>
-                  <button onClick={addEducation} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"><Plus size={14} /> Add School</button>
+                  <button onClick={addEducation} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 shadow-lg shadow-slate-200"><Plus size={14} /> Add School</button>
                 </div>
-
                 {resume.education.length === 0 && <EmptyState icon={GraduationCap} text="No education listed yet." />}
-
                 {resume.education.map((edu, index) => (
-                  <div key={edu.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4 transition-all hover:shadow-md">
+                  <div key={edu.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4">
                     <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-2">
-                         <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-bold text-slate-500">{index + 1}</span>
-                         <span className="text-sm font-semibold text-slate-400">School</span>
-                      </div>
-                      <div className="flex gap-1">
-                         <button onClick={() => moveEducation(index, 'up')} disabled={index === 0} className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30"><ArrowUp size={14} /></button>
-                         <button onClick={() => moveEducation(index, 'down')} disabled={index === resume.education.length - 1} className="p-1 text-slate-300 hover:text-slate-600 disabled:opacity-30"><ArrowDown size={14} /></button>
-                         <button onClick={() => removeEducation(edu.id)} className="p-1 text-slate-300 hover:text-red-500 ml-2"><Trash2 size={14} /></button>
-                      </div>
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-bold text-slate-500">{index + 1}</span>
+                      <button onClick={() => removeEducation(edu.id)} className="p-1 text-slate-400 hover:text-red-500 ml-2"><Trash2 size={14} /></button>
                     </div>
-                    <Input label="Degree / Certificate" value={edu.degree} onChange={(v) => updateEducation(edu.id, 'degree', v)} placeholder="BS Computer Science" />
-                    <Input label="School / University" value={edu.school} onChange={(v) => updateEducation(edu.id, 'school', v)} placeholder="University of Technology" />
-                    <Input label="Location" value={edu.location} onChange={(v) => updateEducation(edu.id, 'location', v)} placeholder="City, State" />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Input label="Start Date" type="month" value={edu.startDate} onChange={(v) => updateEducation(edu.id, 'startDate', v)} />
-                      <Input label="End Date" type="month" value={edu.endDate} onChange={(v) => updateEducation(edu.id, 'endDate', v)} />
+                    <Input label="Degree" value={edu.degree} onChange={(v) => updateEducation(edu.id, 'degree', v)} onFocus={handleFocus} placeholder="BS CS" />
+                    <Input label="School" value={edu.school} onChange={(v) => updateEducation(edu.id, 'school', v)} onFocus={handleFocus} placeholder="University of X" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <Input label="Start Date" type="month" value={edu.startDate} onChange={(v) => updateEducation(edu.id, 'startDate', v)} onFocus={handleFocus} />
+                      <Input label="End Date" type="month" value={edu.endDate} onChange={(v) => updateEducation(edu.id, 'endDate', v)} onFocus={handleFocus} />
                     </div>
                   </div>
                 ))}
@@ -392,40 +403,26 @@ export const ResumeBuilder: React.FC = () => {
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-900">Projects</h3>
-                  <button onClick={addProject} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"><Plus size={14} /> Add Project</button>
+                  <button onClick={addProject} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 shadow-lg shadow-slate-200"><Plus size={14} /> Add Project</button>
                 </div>
-
                 {resume.projects.length === 0 && <EmptyState icon={FolderGit2} text="No projects listed yet." />}
-
                 {resume.projects.map((proj, index) => (
-                  <div key={proj.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4 transition-all hover:shadow-md">
-                     <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-2">
-                         <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-bold text-slate-500">{index + 1}</span>
-                         <span className="text-sm font-semibold text-slate-400">Project</span>
-                      </div>
-                      <button onClick={() => removeProject(proj.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50"><Trash2 size={14} /></button>
+                  <div key={proj.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4">
+                    <div className="flex justify-between items-start">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-xs font-bold text-slate-500">{index + 1}</span>
+                      <button onClick={() => removeProject(proj.id)} className="text-slate-400 hover:text-red-500 p-1 rounded"><Trash2 size={14} /></button>
                     </div>
-                    <Input label="Project Name" value={proj.name} onChange={(v) => updateProject(proj.id, 'name', v)} placeholder="E-commerce Platform" />
-                    <Input label="Tech Stack" value={proj.techStack} onChange={(v) => updateProject(proj.id, 'techStack', v)} placeholder="React, Node.js, AWS" />
+                    <Input label="Project Name" value={proj.name} onChange={(v) => updateProject(proj.id, 'name', v)} onFocus={handleFocus} />
+                    <Input label="Tech Stack" value={proj.techStack} onChange={(v) => updateProject(proj.id, 'techStack', v)} onFocus={handleFocus} />
                     <div>
                         <div className="flex justify-between items-center mb-1">
                            <label className="text-xs font-medium text-slate-500">Description</label>
-                           <button 
-                             onClick={() => enhanceDescription(proj.id, proj.description, 'project')}
-                             disabled={isEnhancing === proj.id || !proj.description}
-                             className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold hover:text-emerald-700 disabled:opacity-50"
-                           >
+                           <button onClick={() => enhanceDescription(proj.id, proj.description, 'project')} disabled={isEnhancing === proj.id || !proj.description} className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold disabled:opacity-50">
                              {isEnhancing === proj.id ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />}
                              AI Enhance
                            </button>
                         </div>
-                        <textarea 
-                            value={proj.description} 
-                            onChange={(e) => updateProject(proj.id, 'description', e.target.value)} 
-                            className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm h-24 resize-none placeholder:text-slate-300 transition-all focus:ring-1 focus:ring-emerald-500" 
-                            placeholder="Built a scalable platform serving 10k users..." 
-                        />
+                        <textarea value={proj.description} onFocus={handleFocus} onChange={(e) => updateProject(proj.id, 'description', e.target.value)} className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm h-24 resize-none transition-all" />
                     </div>
                   </div>
                 ))}
@@ -436,13 +433,12 @@ export const ResumeBuilder: React.FC = () => {
 
         {/* --- PREVIEW PANEL --- */}
         <div className={`w-full xl:w-7/12 flex-col h-full print:w-full print:absolute print:top-0 print:left-0 print:h-auto print:z-[100] print:bg-white ${mobileView === 'preview' ? 'flex' : 'hidden xl:flex'}`}>
-          <div className="flex-1 bg-slate-100 rounded-2xl overflow-y-auto p-4 md:p-8 print:p-0 print:bg-white print:overflow-visible border border-slate-200 shadow-inner scrollbar-thin scrollbar-thumb-slate-300">
-            <div className="bg-white shadow-xl mx-auto max-w-[210mm] min-h-[297mm] p-[10mm] md:p-[15mm] text-slate-900 print:shadow-none print:w-full print:max-w-none origin-top transition-transform">
+          <div className="flex-1 bg-slate-100 rounded-2xl overflow-y-auto p-4 md:p-8 print:p-0 print:bg-white border border-slate-200 shadow-inner">
+            <div className="bg-white shadow-xl mx-auto max-w-[210mm] min-h-[297mm] p-[10mm] md:p-[15mm] text-slate-900 print:shadow-none print:w-full print:max-w-none">
               
-              {/* Header with Avatar Layout */}
               <div onClick={() => switchToEditor('details')} className="cursor-pointer border-b-2 border-slate-900 pb-6 mb-6 flex gap-6 items-start hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg group relative">
                 <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">
-                   <Edit3 size={12} /> <span className="hidden sm:inline">Edit Details</span>
+                   <Edit3 size={12} /> <span className="hidden sm:inline">Edit</span>
                 </div>
                 {resume.avatar && (
                   <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-slate-100 shadow-sm flex-shrink-0">
@@ -452,30 +448,22 @@ export const ResumeBuilder: React.FC = () => {
                 <div className="flex-1">
                   <h1 className="text-3xl md:text-4xl font-bold uppercase tracking-tight mb-3 text-slate-900 break-words">{resume.fullName || 'Your Name'}</h1>
                   <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
-                    {resume.email && <div className="flex items-center gap-1.5"><Mail size={14} className="text-emerald-600 shrink-0" /> <span className="break-all">{resume.email}</span></div>}
-                    {resume.phone && <div className="flex items-center gap-1.5"><Phone size={14} className="text-emerald-600 shrink-0" /> {resume.phone}</div>}
-                    {resume.location && <div className="flex items-center gap-1.5"><MapPin size={14} className="text-emerald-600 shrink-0" /> {resume.location}</div>}
-                    {resume.linkedin && <div className="flex items-center gap-1.5"><Linkedin size={14} className="text-emerald-600 shrink-0" /> <span className="break-all">{resume.linkedin.replace(/^https?:\/\//, '')}</span></div>}
-                    {resume.website && <div className="flex items-center gap-1.5"><Globe size={14} className="text-emerald-600 shrink-0" /> <span className="break-all">{resume.website.replace(/^https?:\/\//, '')}</span></div>}
+                    {resume.email && <div className="flex items-center gap-1.5"><Mail size={14} className="text-emerald-600" /> <span className="break-all">{resume.email}</span></div>}
+                    {resume.phone && <div className="flex items-center gap-1.5"><Phone size={14} className="text-emerald-600" /> {resume.phone}</div>}
+                    {resume.location && <div className="flex items-center gap-1.5"><MapPin size={14} className="text-emerald-600" /> {resume.location}</div>}
                   </div>
                 </div>
               </div>
 
               {resume.summary && (
                 <div onClick={() => switchToEditor('summary')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg group relative">
-                  <div className="absolute top-0 right-2 flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">
-                     <Edit3 size={12} /> <span className="hidden sm:inline">Edit Summary</span>
-                  </div>
-                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-3">Professional Summary</h2>
-                  <p className="text-sm leading-relaxed text-slate-800 text-justify whitespace-pre-line">{resume.summary}</p>
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-3">Summary</h2>
+                  <p className="text-sm leading-relaxed text-slate-800 whitespace-pre-line">{resume.summary}</p>
                 </div>
               )}
 
               {resume.skills && (
                 <div onClick={() => switchToEditor('skills')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg group relative">
-                  <div className="absolute top-0 right-2 flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">
-                     <Edit3 size={12} /> <span className="hidden sm:inline">Edit Skills</span>
-                  </div>
                   <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-2">Skills</h2>
                   <p className="text-sm leading-relaxed text-slate-800">{resume.skills}</p>
                 </div>
@@ -483,16 +471,13 @@ export const ResumeBuilder: React.FC = () => {
 
               {resume.experience.length > 0 && (
                 <div onClick={() => switchToEditor('experience')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg group relative">
-                  <div className="absolute top-0 right-2 flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">
-                     <Edit3 size={12} /> <span className="hidden sm:inline">Edit Experience</span>
-                  </div>
-                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-4">Work Experience</h2>
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-4">Experience</h2>
                   <div className="space-y-6">
                     {resume.experience.map(exp => (
                       <div key={exp.id}>
                         <div className="flex justify-between items-baseline mb-1">
                           <h3 className="font-bold text-base text-slate-900">{exp.role}</h3>
-                          <span className="text-xs font-semibold text-slate-500 whitespace-nowrap bg-slate-100 px-2 py-0.5 rounded">
+                          <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                             {formatDate(exp.startDate)} - {exp.current ? 'Present' : formatDate(exp.endDate)}
                           </span>
                         </div>
@@ -500,7 +485,7 @@ export const ResumeBuilder: React.FC = () => {
                           <span className="text-sm font-semibold text-emerald-700">{exp.company}</span>
                           <span className="text-xs text-slate-500 italic">{exp.location}</span>
                         </div>
-                        <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{exp.description}</div>
+                        <div className="text-sm text-slate-700 whitespace-pre-wrap">{exp.description}</div>
                       </div>
                     ))}
                   </div>
@@ -508,10 +493,7 @@ export const ResumeBuilder: React.FC = () => {
               )}
 
               {resume.projects.length > 0 && (
-                <div onClick={() => switchToEditor('projects')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg group relative">
-                   <div className="absolute top-0 right-2 flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">
-                     <Edit3 size={12} /> <span className="hidden sm:inline">Edit Projects</span>
-                   </div>
+                <div onClick={() => switchToEditor('projects')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg relative">
                    <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-4">Projects</h2>
                    <div className="space-y-4">
                      {resume.projects.map(proj => (
@@ -520,7 +502,7 @@ export const ResumeBuilder: React.FC = () => {
                            <h3 className="font-bold text-base text-slate-900">{proj.name}</h3>
                            <span className="text-xs text-emerald-600 font-medium">{proj.techStack}</span>
                          </div>
-                         <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{proj.description}</div>
+                         <div className="text-sm text-slate-700 whitespace-pre-wrap">{proj.description}</div>
                        </div>
                      ))}
                    </div>
@@ -528,10 +510,7 @@ export const ResumeBuilder: React.FC = () => {
               )}
 
               {resume.education.length > 0 && (
-                <div onClick={() => switchToEditor('education')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg group relative">
-                  <div className="absolute top-0 right-2 flex items-center gap-1 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">
-                     <Edit3 size={12} /> <span className="hidden sm:inline">Edit Education</span>
-                  </div>
+                <div onClick={() => switchToEditor('education')} className="cursor-pointer mb-8 hover:bg-slate-50 transition-colors p-2 -m-2 rounded-lg relative">
                   <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-1 mb-3">Education</h2>
                   <div className="space-y-4">
                     {resume.education.map(edu => (
@@ -555,32 +534,33 @@ export const ResumeBuilder: React.FC = () => {
   );
 };
 
-// Typed Input Props
 interface InputProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
   placeholder?: string;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
 }
 
-const Input: React.FC<InputProps> = ({ label, value, onChange, type = "text", placeholder }) => (
-  <div>
-    <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+const Input: React.FC<InputProps> = ({ label, value, onChange, type = "text", placeholder, onFocus }) => (
+  <div className="relative group">
+    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 group-focus-within:text-emerald-500 transition-colors">{label}</label>
     <input 
       type={type} 
       value={value} 
+      onFocus={onFocus}
       onChange={(e) => onChange(e.target.value)} 
       placeholder={placeholder} 
-      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-emerald-500 outline-none text-sm bg-white placeholder:text-slate-300 transition-all focus:ring-1 focus:ring-emerald-500" 
+      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-emerald-500 outline-none text-sm bg-white transition-all focus:ring-1 focus:ring-emerald-500" 
     />
   </div>
 );
 
 const EmptyState = ({ icon: Icon, text }: any) => (
   <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300">
-     <Icon className="mx-auto text-slate-300 mb-2" size={32} />
-     <p className="text-slate-500 text-sm">{text}</p>
+     <Icon className="mx-auto text-slate-200 mb-2" size={32} />
+     <p className="text-slate-400 text-sm font-medium">{text}</p>
   </div>
 );
 

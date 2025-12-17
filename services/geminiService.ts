@@ -1,222 +1,150 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
-/**
- * Safely retrieves the API key from the environment.
- * Guidelines: Assume process.env.API_KEY is pre-configured.
- * We use 'typeof process' to avoid ReferenceErrors in browser-only environments.
- */
 const getSafeApiKey = (): string => {
   if (typeof process !== 'undefined' && process.env) {
     return process.env.API_KEY || "";
   }
-  // Check window for common environment injection patterns
   const win = window as any;
   if (win._env_ && win._env_.API_KEY) return win._env_.API_KEY;
   if (win.process && win.process.env && win.process.env.API_KEY) return win.process.env.API_KEY;
-  
   return "";
 };
 
-/**
- * Creates a fresh instance of the AI client.
- * Guidelines: Create a new instance right before use to ensure up-to-date keys.
- */
 const getAIClient = () => {
   const apiKey = getSafeApiKey();
-  if (!apiKey) {
-    console.warn("Gemini API Key is missing from the environment.");
-  }
   return new GoogleGenAI({ apiKey });
 };
 
-export const generateCoverLetter = async (
-  role: string,
-  company: string,
-  skills: string,
-  jobDescription?: string
-): Promise<string> => {
-  const prompt = `
-    Write a passionate and professional cover letter for the position of ${role} at ${company}.
-    My Skills: ${skills}
-    ${jobDescription ? `Job Description Key Points: ${jobDescription}` : ''}
-    Keep it concise (under 300 words), engaging, and tailored to the company.
-    Sign off with "Sincerely, [Applicant Name]".
-  `;
-
+export const generateCoverLetter = async (role: string, company: string, skills: string, jobDescription?: string): Promise<string> => {
+  const prompt = `Write a professional cover letter for ${role} at ${company}. Skills: ${skills}. ${jobDescription ? `JD: ${jobDescription}` : ''}`;
   try {
     const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
-    return response.text || "Could not generate cover letter.";
-  } catch (error) {
-    console.error("Error generating cover letter:", error);
-    throw error;
-  }
+    const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+    return response.text || "";
+  } catch (error) { throw error; }
 };
 
-export const generateInterviewGuide = async (
-  role: string,
-  company: string,
-  description?: string
-): Promise<string> => {
+export const analyzeJobMatch = async (resume: any, jobDescription: string) => {
   const prompt = `
-    Act as a career coach. I have received an offer or an interview request for:
-    Role: ${role}
-    Company: ${company}
-    ${description ? `Context: ${description}` : ''}
+    Compare this resume with the following job description. 
+    Provide a JSON response with:
+    1. "score": number (0-100)
+    2. "strengths": string[] (matching skills/experience)
+    3. "gaps": string[] (missing keywords or skills)
+    4. "advice": string (how to improve the resume for this specific JD)
 
-    Please provide a strategic guide including:
-    1. 3 potential interview questions they might ask.
-    2. 2 smart questions I should ask them.
-    3. A brief negotiation tip.
-    Format nicely in Markdown.
+    Resume: ${JSON.stringify(resume)}
+    Job Description: ${jobDescription}
   `;
-
-  try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
-    return response.text || "Could not generate guide.";
-  } catch (error) {
-    console.error("Error generating interview guide:", error);
-    throw error;
-  }
-};
-
-export const generateResumeSummary = async (
-  role: string,
-  skills: string,
-  experience: string
-): Promise<string> => {
-  const prompt = `
-    Write a professional resume summary (approx 3-4 sentences) for a candidate with the following profile:
-    Current/Target Role: ${role}
-    Key Skills: ${skills}
-    Key Experience Highlights: ${experience}
-    Use strong action verbs and no first-person pronouns.
-  `;
-
-  try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
-    return response.text || "Could not generate summary.";
-  } catch (error) {
-    console.error("Error generating resume summary:", error);
-    throw error;
-  }
-};
-
-export const enhanceResumeDescription = async (text: string): Promise<string> => {
-  const prompt = `
-    Rewrite the following resume experience description to be more professional, action-oriented, and impactful.
-    Maintain the original meaning but use stronger verbs and clearer structure.
-    
-    Original Text:
-    "${text}"
-    
-    Return ONLY the rewritten text, no conversational filler.
-  `;
-
-  try {
-    const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-    });
-    return response.text || text;
-  } catch (error) {
-    console.error("Error enhancing description:", error);
-    throw error;
-  }
-};
-
-export const analyzeResumeImage = async (base64Image: string, mimeType: string) => {
-  const prompt = `
-    Analyze this resume image/document. Extract the structured data to match this JSON schema.
-    Improve the wording of descriptions to be more action-oriented and professional where possible.
-    
-    If specific fields like email or phone are missing, use empty strings.
-    For dates, try to format as YYYY-MM.
-    
-    Schema structure:
-    {
-      "fullName": string,
-      "email": string,
-      "phone": string,
-      "location": string,
-      "linkedin": string,
-      "website": string,
-      "summary": string,
-      "skills": string (comma separated),
-      "experience": [{ "role": string, "company": string, "location": string, "startDate": string, "endDate": string, "current": boolean, "description": string }],
-      "education": [{ "degree": string, "school": string, "location": string, "startDate": string, "endDate": string }],
-      "projects": [{ "name": string, "description": string, "techStack": string }]
-    }
-  `;
-
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: {
-        parts: [
-          { inlineData: { mimeType, data: base64Image } },
-          { text: prompt }
-        ]
-      },
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+    return JSON.parse(response.text || "{}");
+  } catch (error) { throw error; }
+};
+
+export const findMatchingJobs = async (skills: string, location: string) => {
+  const prompt = `Find 5 current, high-quality job openings for someone with these skills: ${skills}. Preferred location: ${location}. For each job, provide: Title, Company, Location, and a brief "Match Reason". Include the direct application URL.`;
+  try {
+    const ai = getAIClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
       config: {
-        responseMimeType: 'application/json',
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              company: { type: Type.STRING },
+              location: { type: Type.STRING },
+              url: { type: Type.STRING },
+              source: { type: Type.STRING },
+              matchReason: { type: Type.STRING }
+            },
+            required: ["title", "company", "url", "matchReason"]
+          }
+        }
       }
     });
+    
+    const results = JSON.parse(response.text || "[]");
+    // Extract URLs from grounding metadata if JSON doesn't have them reliably
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    return results.map((job: any, i: number) => ({
+      ...job,
+      source: chunks[i]?.web?.title || job.source || "Web Search"
+    }));
+  } catch (error) { throw error; }
+};
 
-    const jsonText = response.text || "{}";
-    return JSON.parse(jsonText);
-  } catch (error) {
-    console.error("Error analyzing resume:", error);
-    throw error;
-  }
+export const generateInterviewGuide = async (role: string, company: string, description?: string): Promise<string> => {
+  const prompt = `Career coach guide for ${role} at ${company}. Context: ${description}`;
+  try {
+    const ai = getAIClient();
+    const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+    return response.text || "";
+  } catch (error) { throw error; }
+};
+
+export const generateResumeSummary = async (role: string, skills: string, experience: string): Promise<string> => {
+  const prompt = `Resume summary for ${role}. Skills: ${skills}. Exp: ${experience}`;
+  try {
+    const ai = getAIClient();
+    const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+    return response.text || "";
+  } catch (error) { throw error; }
+};
+
+export const enhanceResumeDescription = async (text: string): Promise<string> => {
+  const prompt = `Rewrite impactfully: "${text}"`;
+  try {
+    const ai = getAIClient();
+    const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: prompt });
+    return response.text || text;
+  } catch (error) { throw error; }
+};
+
+export const analyzeResumeImage = async (base64Image: string, mimeType: string) => {
+  const prompt = `Extract resume data to JSON schema.`;
+  try {
+    const ai = getAIClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: { parts: [{ inlineData: { mimeType, data: base64Image } }, { text: prompt }] },
+      config: { responseMimeType: 'application/json' }
+    });
+    return JSON.parse(response.text || "{}");
+  } catch (error) { throw error; }
 };
 
 export const generateProfessionalAvatar = async (base64Image: string, stylePrompt?: string): Promise<string> => {
-  const finalPrompt = stylePrompt || "Transform this person into a high-quality professional corporate headshot. Studio lighting, neutral grey gradient background, professional business attire, sharp focus, confident smile.";
-
+  const finalPrompt = stylePrompt || "Professional corporate headshot.";
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: finalPrompt }
-        ]
-      },
+      contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64Image } }, { text: finalPrompt }] },
     });
-
     for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return part.inlineData.data;
-      }
+      if (part.inlineData) return part.inlineData.data;
     }
     throw new Error("No image generated.");
-  } catch (error) {
-    console.error("Error generating avatar:", error);
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
 
 export const createClaireChat = () => {
   const ai = getAIClient();
   return ai.chats.create({
     model: 'gemini-3-flash-preview',
-    config: {
-      systemInstruction: "You are Claire, a friendly, empathetic, and strategic career coach. You help the user optimize their job search. Keep answers concise and encouraging. Use formatting like bolding for key tips.",
-    }
+    config: { systemInstruction: "You are Claire, a career coach helper." }
   });
 };

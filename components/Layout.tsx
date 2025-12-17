@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { LayoutDashboard, Briefcase, FileText, Settings, UserCircle, Menu, FileUser, Camera, LogOut } from 'lucide-react';
+import { LayoutDashboard, Briefcase, FileText, Settings, UserCircle, Menu, FileUser, Camera, LogOut, Radar } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { ClaireChat } from './ClaireChat';
 import { useAuth } from '../context/AuthContext';
@@ -27,7 +28,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   return (
     <div className="min-h-screen h-[100dvh] bg-slate-50 flex flex-col lg:flex-row font-sans text-slate-900 overflow-hidden">
-      {/* Sidebar - Hidden on print */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:block print:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="h-full flex flex-col p-6">
           <div className="flex items-center gap-2 mb-10 px-2">
@@ -39,6 +39,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
           <nav className="flex-1 space-y-2">
             <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" active={location.pathname === '/'} />
+            <SidebarItem icon={Radar} label="Opportunity Radar" to="/radar" active={location.pathname === '/radar'} />
             <SidebarItem icon={Briefcase} label="My Applications" to="/applications" active={location.pathname === '/applications'} />
             <SidebarItem icon={FileUser} label="Resume Builder" to="/resume" active={location.pathname === '/resume'} />
             <SidebarItem icon={Camera} label="Avatar Studio" to="/avatar" active={location.pathname === '/avatar'} />
@@ -70,9 +71,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative h-full">
-        {/* Mobile Header - Hidden on print */}
         <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 print:hidden shrink-0">
            <div className="flex items-center gap-2">
             <div className="w-6 h-6 bg-emerald-600 rounded flex items-center justify-center">
@@ -85,20 +84,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </button>
         </div>
 
-        {/* Scroll Area - Optimized for Resume Builder */}
         <div className={`flex-1 overflow-y-auto ${isResumeBuilder ? 'p-2 md:p-4 md:pr-2' : 'p-4 md:p-8'} print:p-0 print:overflow-visible`}>
           <div className={`${isResumeBuilder ? 'max-w-[1800px] w-full h-full' : 'max-w-7xl'} mx-auto print:max-w-none print:mx-0 transition-all duration-300`}>
             {children}
           </div>
         </div>
 
-        {/* Claire Chat Overlay */}
         <div className="print:hidden">
            <ClaireChat />
         </div>
       </main>
 
-      {/* Mobile Overlay */}
       {mobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden print:hidden"
